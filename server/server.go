@@ -2,12 +2,13 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
 	"runtime"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -18,38 +19,48 @@ const (
 	//WorkerPool = 10 // Number of worker goroutines
 )
 
-var counter int64
+var counter uint64
 
 // Worker function to process requests
-func worker(jobs <-chan net.Conn, wg *sync.WaitGroup) {
+func worker(connections <-chan net.Conn, wg *sync.WaitGroup) {
 	defer wg.Done()
-	for conn := range jobs {
+	for conn := range connections {
 		handleConnection(conn)
 	}
+
 }
 
 // Handles an individual client connection
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
-	reader := bufio.NewScanner(conn)
-
-	for reader.Scan() {
-		data := reader.Text()
-		_, err := strconv.Atoi(data) // Validate input
+	reader := bufio.NewReader(conn)
+	for {
+		buf := make([]byte, 8)
+		_, err := reader.Read(buf)
 		if err != nil {
-			fmt.Fprintf(conn, "Invalid number\n")
-			continue
+			if err == io.EOF {
+				fmt.Println("connection is closed")
+				return
+			}
+			fmt.Println("Read error:", err)
+			return
 		}
 
-		// Atomically increment the counter
-		newValue := atomic.AddInt64(&counter, 1)
+		number := binary.BigEndian.Uint64(buf)
+		newValue := atomic.AddUint64(&counter, number)
 
 		// Send the updated counter value back to the client
-		fmt.Fprintf(conn, "%d\n", newValue)
-	}
-
-	if err := reader.Err(); err != nil {
-		fmt.Println("Connection error:", err)
+		response := make([]byte, 8)
+		binary.BigEndian.PutUint64(response, newValue)
+		_, err = conn.Write(response)
+		if err != nil {
+			if err == io.EOF {
+				fmt.Println("connection is closed")
+				return
+			}
+			fmt.Println("Write error:", err)
+			return
+		}
 	}
 }
 
@@ -60,13 +71,13 @@ func main() {
 	}
 	defer listener.Close()
 
-	fmt.Println("Server is running on port: ", Port)
+	fmt.Println("Server is listening on port: ", Port)
 
+	numWorkers := runtime.NumCPU() * 50
 	// Worker pool
-	jobs := make(chan net.Conn, 100)
+	jobs := make(chan net.Conn, numWorkers)
 	var wg sync.WaitGroup
 
-	numWorkers := runtime.NumCPU() * 40
 	fmt.Println("Starting with ", numWorkers, "workers")
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
@@ -78,20 +89,18 @@ func main() {
 
 	go func() {
 		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				fmt.Println("Connection error:", err)
+			conn, er := listener.Accept()
+			if er != nil {
+				fmt.Println("Connection error:", er)
 				continue
 			}
-
 			// Send the connection to the worker pool
 			jobs <- conn
 		}
 	}()
 
 	<-signalCh
-	fmt.Println("\nShutting down server...")
-	close(jobs) // Close jobs when server shuts down
+	close(jobs)
 	wg.Wait()
 	fmt.Println("Server stopped after processing total requests:", counter)
 }
@@ -150,13 +159,15 @@ func main() {
 // 16165981
 
 // Server 240 workers and client with 240 workers
-// 16 435 263
-// 16 377 775
+//   string      []byte
+// 16 435 263   16 364 461
+// 16 377 775   16 454 078
 
 // Server 300 workers and client with 300 workers
 // 16480410
 // 16418252
 
 // Server 480 workers and client with 480 workers
-// 16320309
-// 16388962
+//  string      bytes
+// 16320309   16000717
+// 16388962   16347499

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bufio"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"runtime"
@@ -24,8 +24,8 @@ func clientWorker(id int, wg *sync.WaitGroup, startCh, stopCh <-chan struct{}) {
 	}
 	defer conn.Close()
 
-	writer := bufio.NewWriter(conn)
-	reader := bufio.NewScanner(conn)
+	//writer := bufio.NewWriter(conn)
+	//reader := bufio.NewScanner(conn)
 
 	<-startCh
 	for {
@@ -35,19 +35,27 @@ func clientWorker(id int, wg *sync.WaitGroup, startCh, stopCh <-chan struct{}) {
 			return
 		default:
 			// Send "1" to the server
-			_, err := writer.WriteString("1\n")
+			number := uint64(1)
+			buf := make([]byte, 8)
+			binary.BigEndian.PutUint64(buf, number)
+
+			_, err = conn.Write(buf)
 			if err != nil {
 				fmt.Printf("Client %d: Write error: %v\n", id, err)
 				return
 			}
-			writer.Flush()
 
-			// Read response from the server
-			if reader.Scan() {
-				//fmt.Printf("Client %d received: %s\n", id, reader.Text())
-				//reader.Text()
-			} else {
-				fmt.Printf("Client %d: Read error\n", id)
+			//_, err := writer.WriteString("1\n")
+			//if err != nil {
+			//	fmt.Printf("Client %d: Write error: %v\n", id, err)
+			//	return
+			//}
+			//writer.Flush()
+
+			resp := make([]byte, 8)
+			_, err = conn.Read(resp)
+			if err != nil {
+				fmt.Println("Read error:", err)
 				return
 			}
 		}
@@ -56,7 +64,7 @@ func clientWorker(id int, wg *sync.WaitGroup, startCh, stopCh <-chan struct{}) {
 
 func main() {
 	var wg sync.WaitGroup
-	numWorkers := runtime.NumCPU() * 40 // Optimize for I/O-bound workload
+	numWorkers := runtime.NumCPU() * 50 // Optimize for I/O-bound workload
 
 	fmt.Println("Starting", numWorkers, "client workers...")
 
