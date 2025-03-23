@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
+	"github.com/cespare/xxhash/v2"
 	"io"
 	"net"
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -16,7 +18,6 @@ import (
 
 const (
 	Port = ":8080"
-	//WorkerPool = 10 // Number of worker goroutines
 )
 
 var counter uint64
@@ -35,7 +36,7 @@ func handleConnection(conn net.Conn) {
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
 	for {
-		buf := make([]byte, 8)
+		buf := make([]byte, 16)
 		_, err := reader.Read(buf)
 		if err != nil {
 			if err == io.EOF {
@@ -46,9 +47,18 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		number := binary.BigEndian.Uint64(buf)
-		newValue := atomic.AddUint64(&counter, number)
+		number := binary.BigEndian.Uint64(buf[:8])
+		str := strconv.FormatUint(number, 10)
+		expectedCheckSum := xxhash.Sum64String(str)
+		checkSum := binary.BigEndian.Uint64(buf[8:])
 
+		if checkSum != expectedCheckSum {
+			fmt.Printf("Unexpected checkSum: %d for unasign integer: %d. Close the connection\n", checkSum, number)
+			fmt.Println("Close the connection")
+			return
+		}
+
+		newValue := atomic.AddUint64(&counter, number)
 		// Send the updated counter value back to the client
 		response := make([]byte, 8)
 		binary.BigEndian.PutUint64(response, newValue)
@@ -65,21 +75,26 @@ func handleConnection(conn net.Conn) {
 }
 
 func main() {
-	listener, err := net.Listen("tcp", Port)
+	numWorkers := runtime.NumCPU() * 50
+
+	runTCPServer(numWorkers, Port)
+	fmt.Println("Server stopped after processing total requests:", counter)
+}
+
+func runTCPServer(maxConn int, port string) {
+	listener, err := net.Listen("tcp", port)
 	if err != nil {
 		panic(err)
 	}
 	defer listener.Close()
-
 	fmt.Println("Server is listening on port: ", Port)
 
-	numWorkers := runtime.NumCPU() * 50
 	// Worker pool
-	jobs := make(chan net.Conn, numWorkers)
+	jobs := make(chan net.Conn, maxConn)
 	var wg sync.WaitGroup
 
-	fmt.Println("Starting with ", numWorkers, "workers")
-	for i := 0; i < numWorkers; i++ {
+	fmt.Println("Starting with ", maxConn, "workers")
+	for i := 0; i < maxConn; i++ {
 		wg.Add(1)
 		go worker(jobs, &wg)
 	}
@@ -102,7 +117,6 @@ func main() {
 	<-signalCh
 	close(jobs)
 	wg.Wait()
-	fmt.Println("Server stopped after processing total requests:", counter)
 }
 
 // Server 24 workers and client with 24 workers

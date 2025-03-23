@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	xxhash "github.com/cespare/xxhash/v2"
 	"net"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -24,9 +26,14 @@ func clientWorker(id int, wg *sync.WaitGroup, startCh, stopCh <-chan struct{}) {
 	}
 	defer conn.Close()
 
-	//writer := bufio.NewWriter(conn)
-	//reader := bufio.NewScanner(conn)
+	number := uint64(1)
+	payloadBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(payloadBytes, number)
 
+	str := strconv.FormatUint(number, 10)
+	sum := xxhash.Sum64String(str)
+	hashBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(hashBytes, sum)
 	<-startCh
 	for {
 		select {
@@ -34,23 +41,11 @@ func clientWorker(id int, wg *sync.WaitGroup, startCh, stopCh <-chan struct{}) {
 			fmt.Printf("Client %d stopping...\n", id)
 			return
 		default:
-			// Send "1" to the server
-			number := uint64(1)
-			buf := make([]byte, 8)
-			binary.BigEndian.PutUint64(buf, number)
-
-			_, err = conn.Write(buf)
+			_, err = conn.Write(append(payloadBytes, hashBytes...))
 			if err != nil {
 				fmt.Printf("Client %d: Write error: %v\n", id, err)
 				return
 			}
-
-			//_, err := writer.WriteString("1\n")
-			//if err != nil {
-			//	fmt.Printf("Client %d: Write error: %v\n", id, err)
-			//	return
-			//}
-			//writer.Flush()
 
 			resp := make([]byte, 8)
 			_, err = conn.Read(resp)
