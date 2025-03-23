@@ -59,7 +59,7 @@ func clientWorker(id int, wg *sync.WaitGroup, startCh, stopCh <-chan struct{}) {
 
 func main() {
 	var wg sync.WaitGroup
-	numWorkers := runtime.NumCPU() * 50 // Optimize for I/O-bound workload
+	numWorkers := runtime.NumCPU() * 20
 
 	fmt.Println("Starting", numWorkers, "client workers...")
 
