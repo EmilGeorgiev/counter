@@ -59,6 +59,8 @@ func main() {
 	serverAddress := flag.String("serverAddress", "127.0.0.1:8080", "TCP port to listen on")
 	multiplier := flag.Int("multiplier", 20, "Multiplier for number of workers per CPU")
 
+	flag.Parse()
+
 	var wg sync.WaitGroup
 	numWorkers := runtime.NumCPU() * *multiplier
 

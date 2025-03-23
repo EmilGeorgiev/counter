@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
+	"github.com/cespare/xxhash/v2"
 	"io"
 	"net"
 	"os"
@@ -14,8 +15,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
-
-	"github.com/cespare/xxhash/v2"
 )
 
 const (
@@ -30,7 +29,6 @@ func worker(connections <-chan net.Conn, wg *sync.WaitGroup) {
 	for conn := range connections {
 		handleConnection(conn)
 	}
-
 }
 
 // Handles an individual client connection
@@ -41,11 +39,12 @@ func handleConnection(conn net.Conn) {
 		buf := make([]byte, 16)
 		_, err := reader.Read(buf)
 		if err != nil {
+			// Handle other read errors
 			if err == io.EOF {
-				fmt.Println("connection is closed")
-				return
+				fmt.Println("Connection closed by client")
+			} else {
+				fmt.Println("Read error:", err)
 			}
-			fmt.Println("Read error:", err)
 			return
 		}
 
