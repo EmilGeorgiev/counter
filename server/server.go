@@ -29,7 +29,7 @@ func (s *server) startWorker() {
 				return
 			}
 			s.addConn <- conn
-			handleConnection(conn)
+			s.handleConnection(conn)
 			s.removeConn <- conn
 		case <-s.quit:
 			return
@@ -38,17 +38,19 @@ func (s *server) startWorker() {
 }
 
 // Handles an individual client connection
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
+func (s *server) handleConnection(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 	for {
 		buf := make([]byte, 16)
 		_, err := reader.Read(buf)
 		if err != nil {
+			select {
+			case <-s.quit:
+				return
+			default:
+			}
 			// Handle other read errors
-			if err == io.EOF {
-				fmt.Println("Connection closed by client")
-			} else {
+			if err != io.EOF {
 				fmt.Println("Read error:", err)
 			}
 			return
@@ -84,24 +86,17 @@ func handleConnection(conn net.Conn) {
 func main() {
 	port := flag.String("port", ":8080", "TCP port to listen on")
 	multiplier := flag.Int("multiplier", 20, "Multiplier for number of workers per CPU")
-
 	flag.Parse()
 
 	numWorkers := runtime.NumCPU() * *multiplier
-
-	fmt.Println("00000000")
 	s := newServer(numWorkers)
-	fmt.Println("111111")
 	s.start(*port)
-	fmt.Println("222222")
 
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
-	fmt.Println("33333333")
+
 	<-signalCh
-	fmt.Println("44444444")
 	s.stop()
-	//runTCPServer(numWorkers, *port)
 	fmt.Println("Server stopped after processing total requests:", counter)
 }
 
@@ -122,8 +117,8 @@ func newServer(maxConn int) *server {
 		maxConn:           maxConn,
 		activeConnections: make(map[net.Conn]bool),
 		quit:              make(chan struct{}),
-		addConn:           make(chan net.Conn, maxConn),
-		removeConn:        make(chan net.Conn, maxConn),
+		addConn:           make(chan net.Conn, maxConn*2),
+		removeConn:        make(chan net.Conn, maxConn*2),
 		jobs:              make(chan net.Conn),
 		wg:                sync.WaitGroup{},
 	}
@@ -186,7 +181,9 @@ func (s *server) stop() {
 }
 
 func (s *server) mantainsConnPool() {
+	s.wg.Add(1)
 	go func() {
+		s.wg.Done()
 		for {
 			select {
 			case <-s.quit:
@@ -196,10 +193,9 @@ func (s *server) mantainsConnPool() {
 				fmt.Println("All active connections are closed.")
 				return
 			case conn := <-s.addConn:
-				fmt.Println("add new connection to the pool")
 				s.activeConnections[conn] = true
 			case conn := <-s.removeConn:
-				fmt.Println("remove connection from the pool")
+				conn.Close()
 				delete(s.activeConnections, conn)
 			}
 		}
