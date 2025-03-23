@@ -17,8 +17,6 @@ import (
 	"syscall"
 )
 
-//var counter uint64
-
 // Worker function to process requests
 func (s *server) startWorker() {
 	defer s.wg.Done()
@@ -31,19 +29,14 @@ func (s *server) startWorker() {
 
 // Handles an individual client connection
 func (s *server) handleConnection(conn net.Conn) {
+	defer conn.Close()
 	reader := bufio.NewReader(conn)
 	for {
 		buf := make([]byte, 16)
 		_, err := reader.Read(buf)
 		if err != nil {
-			select {
-			case <-s.quit:
-				return
-			default:
-			}
-			// Handle other read errors
 			if err != io.EOF {
-				fmt.Println("Read error:", err)
+				fmt.Printf("[read error from %s]: %v\n", conn.RemoteAddr(), err)
 			}
 			return
 		}
@@ -186,14 +179,13 @@ func (s *server) trackActiveConnections() {
 			case <-s.quit:
 				for conn, _ := range activeConnections {
 					conn.Close()
-					activeConnections[conn] = false
+					delete(activeConnections, conn)
 				}
 				fmt.Println("All active connections are closed.")
 				return
 			case conn := <-s.addConn:
 				activeConnections[conn] = true
 			case conn := <-s.removeConn:
-				conn.Close()
 				delete(activeConnections, conn)
 			}
 		}

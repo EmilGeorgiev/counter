@@ -139,6 +139,44 @@ func TestServer_ClientSendStringButValidCheckSumForItsIntegerRepresentation(t *t
 	equal(t, number, s.counter.Load())
 }
 
+func TestServer_ClientSendLessThan16Bytes(t *testing.T) {
+	s := newServer(1)
+	s.start(":8080")
+
+	time.Sleep(20 * time.Millisecond) // wait the server to start
+	conn, err := net.Dial("tcp", "127.0.0.1:8080")
+	if err != nil {
+		t.Fatalf("Connection failed: %v\n", err)
+	}
+	defer conn.Close()
+
+	reqPayload := []byte("hello")
+	connShouldBeClosedAfterSendTheRequest(t, conn, reqPayload)
+
+	s.stop()
+
+	equal(t, 0, s.counter.Load())
+}
+
+func TestServer_ClientSendMoreThan16Bytes(t *testing.T) {
+	s := newServer(1)
+	s.start(":8080")
+
+	time.Sleep(20 * time.Millisecond) // wait the server to start
+	conn, err := net.Dial("tcp", "127.0.0.1:8080")
+	if err != nil {
+		t.Fatalf("Connection failed: %v\n", err)
+	}
+	defer conn.Close()
+
+	reqPayload := []byte("ccccccccccccccccccccccccc")
+	connShouldBeClosedAfterSendTheRequest(t, conn, reqPayload)
+
+	s.stop()
+
+	equal(t, 0, s.counter.Load())
+}
+
 func equal(t *testing.T, expected uint64, actual uint64) {
 	if expected != actual {
 		t.Errorf("Expected: %d", expected)
