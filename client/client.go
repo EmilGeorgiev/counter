@@ -2,24 +2,22 @@ package main
 
 import (
 	"encoding/binary"
+	"flag"
 	"fmt"
-	xxhash "github.com/cespare/xxhash/v2"
 	"net"
 	"runtime"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/cespare/xxhash/v2"
 )
 
-const (
-	ServerAddress = "127.0.0.1:8080" // Adjust if needed
-)
-
-func clientWorker(id int, wg *sync.WaitGroup, startCh, stopCh <-chan struct{}) {
+func clientWorker(id int, wg *sync.WaitGroup, startCh, stopCh <-chan struct{}, serverAddress string) {
 	defer wg.Done()
 
 	// Open a persistent TCP connection
-	conn, err := net.Dial("tcp", ServerAddress)
+	conn, err := net.Dial("tcp", serverAddress)
 	if err != nil {
 		fmt.Printf("Client %d: Connection failed: %v\n", id, err)
 		return
@@ -58,8 +56,11 @@ func clientWorker(id int, wg *sync.WaitGroup, startCh, stopCh <-chan struct{}) {
 }
 
 func main() {
+	serverAddress := flag.String("serverAddress", "127.0.0.1:8080", "TCP port to listen on")
+	multiplier := flag.Int("multiplier", 20, "Multiplier for number of workers per CPU")
+
 	var wg sync.WaitGroup
-	numWorkers := runtime.NumCPU() * 20
+	numWorkers := runtime.NumCPU() * *multiplier
 
 	fmt.Println("Starting", numWorkers, "client workers...")
 
@@ -67,7 +68,7 @@ func main() {
 	stopCh := make(chan struct{})  // Channel to signal stopping
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go clientWorker(i, &wg, startCh, stopCh)
+		go clientWorker(i, &wg, startCh, stopCh, *serverAddress)
 	}
 
 	time.Sleep(1 * time.Second) // wait and give time to all the workers to start

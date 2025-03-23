@@ -3,8 +3,8 @@ package main
 import (
 	"bufio"
 	"encoding/binary"
+	"flag"
 	"fmt"
-	"github.com/cespare/xxhash/v2"
 	"io"
 	"net"
 	"os"
@@ -14,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+
+	"github.com/cespare/xxhash/v2"
 )
 
 const (
@@ -75,9 +77,13 @@ func handleConnection(conn net.Conn) {
 }
 
 func main() {
-	numWorkers := runtime.NumCPU() * 20
+	port := flag.String("port", ":8080", "TCP port to listen on")
+	multiplier := flag.Int("multiplier", 20, "Multiplier for number of workers per CPU")
 
-	runTCPServer(numWorkers, Port)
+	flag.Parse()
+
+	numWorkers := runtime.NumCPU() * *multiplier
+	runTCPServer(numWorkers, *port)
 	fmt.Println("Server stopped after processing total requests:", counter)
 }
 
