@@ -13,8 +13,10 @@ import (
 )
 
 func TestServer_ClientSendUint64(t *testing.T) {
-	go runTCPServer(1, Port)
-	time.Sleep(1 * time.Second) // wait the server to start
+	s := newServer(1)
+	s.start(":8080")
+
+	time.Sleep(20 * time.Millisecond) // wait the server to start
 	conn, err := net.Dial("tcp", "127.0.0.1:8080")
 	if err != nil {
 		t.Fatalf("Connection failed: %v\n", err)
@@ -27,7 +29,7 @@ func TestServer_ClientSendUint64(t *testing.T) {
 	actual := binary.BigEndian.Uint64(resp)
 
 	equal(t, number, actual)
-	equal(t, number, counter)
+	equal(t, number, s.counter.Load())
 
 	// send second number:
 	number2 := uint64(20)
@@ -35,13 +37,17 @@ func TestServer_ClientSendUint64(t *testing.T) {
 	resp = write(t, conn, p2)
 	actual = binary.BigEndian.Uint64(resp)
 
+	s.stop()
+
 	equal(t, number+number2, actual)
-	equal(t, number+number2, counter)
+	equal(t, number+number2, s.counter.Load())
 }
 
 func TestServer_ClientSendString(t *testing.T) {
-	go runTCPServer(1, Port)
-	time.Sleep(1 * time.Second) // wait the server to start
+	s := newServer(1)
+	s.start(":8080")
+
+	time.Sleep(20 * time.Millisecond) // wait the server to start
 	conn, err := net.Dial("tcp", "127.0.0.1:8080")
 	if err != nil {
 		t.Fatalf("Connection failed: %v\n", err)
@@ -56,12 +62,17 @@ func TestServer_ClientSendString(t *testing.T) {
 	reqPayload := append([]byte(str), checkSum...)
 	connShouldBeClosedAfterSendTheRequest(t, conn, reqPayload)
 
-	equal(t, 0, counter)
+	s.stop()
+
+	equal(t, 0, s.counter.Load())
 }
 
 func TestServer_ClientSendWrongCheckSumForUint64(t *testing.T) {
-	go runTCPServer(1, Port)
-	time.Sleep(1 * time.Second) // wait the server to start
+	s := newServer(1)
+	s.start(":8080")
+	defer s.stop()
+
+	time.Sleep(20 * time.Millisecond) // wait the server to start
 	conn, err := net.Dial("tcp", "127.0.0.1:8080")
 	if err != nil {
 		t.Fatalf("Connection failed: %v\n", err)
@@ -76,12 +87,15 @@ func TestServer_ClientSendWrongCheckSumForUint64(t *testing.T) {
 	reqPayload := append(buf, wrongCheckSum...)
 	connShouldBeClosedAfterSendTheRequest(t, conn, reqPayload)
 
-	equal(t, 0, counter)
+	equal(t, 0, s.counter.Load())
 }
 
 func TestServer_ClientSendIntegerString(t *testing.T) {
-	go runTCPServer(1, Port)
-	time.Sleep(1 * time.Second) // wait the server to start
+	s := newServer(1)
+	s.start(":8080")
+	defer s.stop()
+
+	time.Sleep(20 * time.Millisecond) // wait the server to start
 	conn, err := net.Dial("tcp", "127.0.0.1:8080")
 	if err != nil {
 		t.Fatalf("Connection failed: %v\n", err)
@@ -95,12 +109,15 @@ func TestServer_ClientSendIntegerString(t *testing.T) {
 	reqPayload := append([]byte("123"), checkSum...)
 	connShouldBeClosedAfterSendTheRequest(t, conn, reqPayload)
 
-	equal(t, 0, counter)
+	equal(t, 0, s.counter.Load())
 }
 
 func TestServer_ClientSendStringButValidCheckSumForItsIntegerRepresentation(t *testing.T) {
-	go runTCPServer(1, Port)
-	time.Sleep(1 * time.Second) // wait the server to start
+	s := newServer(1)
+	s.start(":8080")
+	defer s.stop()
+
+	time.Sleep(20 * time.Millisecond) // wait the server to start
 	conn, err := net.Dial("tcp", "127.0.0.1:8080")
 	if err != nil {
 		t.Fatalf("Connection failed: %v\n", err)
@@ -119,7 +136,7 @@ func TestServer_ClientSendStringButValidCheckSumForItsIntegerRepresentation(t *t
 	actual := binary.BigEndian.Uint64(resp)
 
 	equal(t, number, actual)
-	equal(t, number, counter)
+	equal(t, number, s.counter.Load())
 }
 
 func equal(t *testing.T, expected uint64, actual uint64) {

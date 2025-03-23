@@ -17,7 +17,7 @@ import (
 	"syscall"
 )
 
-var counter uint64
+//var counter uint64
 
 // Worker function to process requests
 func (s *server) startWorker() {
@@ -67,7 +67,7 @@ func (s *server) handleConnection(conn net.Conn) {
 			return
 		}
 
-		newValue := atomic.AddUint64(&counter, number)
+		newValue := s.counter.Add(number)
 		// Send the updated counter value back to the client
 		response := make([]byte, 8)
 		binary.BigEndian.PutUint64(response, newValue)
@@ -97,35 +97,34 @@ func main() {
 
 	<-signalCh
 	s.stop()
-	fmt.Println("Server stopped after processing total requests:", counter)
+	fmt.Println("Server stopped after processing total requests:", s.counter.Load())
 }
 
 type server struct {
-	maxConn           int
-	activeConnections map[net.Conn]bool
-	quit              chan struct{}
-	addConn           chan net.Conn
-	removeConn        chan net.Conn
-	jobs              chan net.Conn
-	listener          net.Listener
-	wg                sync.WaitGroup
-	closeOnce         sync.Once
+	maxConn    int
+	quit       chan struct{}
+	addConn    chan net.Conn
+	removeConn chan net.Conn
+	jobs       chan net.Conn
+	listener   net.Listener
+	wg         sync.WaitGroup
+	closeOnce  sync.Once
+	counter    atomic.Uint64
 }
 
 func newServer(maxConn int) *server {
 	return &server{
-		maxConn:           maxConn,
-		activeConnections: make(map[net.Conn]bool),
-		quit:              make(chan struct{}),
-		addConn:           make(chan net.Conn, maxConn*2),
-		removeConn:        make(chan net.Conn, maxConn*2),
-		jobs:              make(chan net.Conn),
-		wg:                sync.WaitGroup{},
+		maxConn:    maxConn,
+		quit:       make(chan struct{}),
+		addConn:    make(chan net.Conn, maxConn*2),
+		removeConn: make(chan net.Conn, maxConn*2),
+		jobs:       make(chan net.Conn),
+		wg:         sync.WaitGroup{},
 	}
 }
 
 func (s *server) start(port string) {
-	s.mantainsConnPool()
+	s.trackActiveConnections()
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
 		panic(err)
@@ -180,23 +179,24 @@ func (s *server) stop() {
 	})
 }
 
-func (s *server) mantainsConnPool() {
+func (s *server) trackActiveConnections() {
 	s.wg.Add(1)
 	go func() {
-		s.wg.Done()
+		defer s.wg.Done()
+		activeConnections := make(map[net.Conn]bool)
 		for {
 			select {
 			case <-s.quit:
-				for conn, _ := range s.activeConnections {
+				for conn, _ := range activeConnections {
 					conn.Close()
 				}
 				fmt.Println("All active connections are closed.")
 				return
 			case conn := <-s.addConn:
-				s.activeConnections[conn] = true
+				activeConnections[conn] = true
 			case conn := <-s.removeConn:
 				conn.Close()
-				delete(s.activeConnections, conn)
+				delete(activeConnections, conn)
 			}
 		}
 	}()

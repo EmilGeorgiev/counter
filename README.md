@@ -73,3 +73,27 @@ Control + C
 ```
 and you will in the terminal the counter value. The number of the counter is equal to the number of requests that are processed
 ny thr server because every request contains 1 as a payload
+
+## Performance Benchmark
+System Specs: 
+```text
+Chip: Apple M3 Pro
+Cores: 12 total (6 performance cores, 6 efficiency cores)
+Memory: 18 GB RAM
+OS: macOS
+Go version: go1.24.1 darwin/arm64    
+```
+Benchmark Configuration:
+```text
+Server and client running on the same machine
+GOMAXPROCS=12 (default)
+--multiplier=20 (worker threads per core for the server + 20 for the client)
+Each client request sends a uint64 value and receives the updated counter
+```
+Result:
+```text
+Server stopped after processing total requests: 16,423,170    
+```
+
+
+
