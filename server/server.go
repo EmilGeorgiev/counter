@@ -22,18 +22,10 @@ import (
 // Worker function to process requests
 func (s *server) startWorker() {
 	defer s.wg.Done()
-	for {
-		select {
-		case conn, ok := <-s.jobs:
-			if !ok {
-				return
-			}
-			s.addConn <- conn
-			s.handleConnection(conn)
-			s.removeConn <- conn
-		case <-s.quit:
-			return
-		}
+	for conn := range s.jobs {
+		s.addConn <- conn
+		s.handleConnection(conn)
+		s.removeConn <- conn
 	}
 }
 
@@ -194,6 +186,7 @@ func (s *server) trackActiveConnections() {
 			case <-s.quit:
 				for conn, _ := range activeConnections {
 					conn.Close()
+					activeConnections[conn] = false
 				}
 				fmt.Println("All active connections are closed.")
 				return
