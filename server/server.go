@@ -17,17 +17,23 @@ import (
 	"syscall"
 )
 
-const (
-	Port = ":8080"
-)
-
 var counter uint64
 
 // Worker function to process requests
-func worker(connections <-chan net.Conn, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for conn := range connections {
-		handleConnection(conn)
+func (s *server) startWorker() {
+	defer s.wg.Done()
+	for {
+		select {
+		case conn, ok := <-s.jobs:
+			if !ok {
+				return
+			}
+			s.addConn <- conn
+			handleConnection(conn)
+			s.removeConn <- conn
+		case <-s.quit:
+			return
+		}
 	}
 }
 
@@ -82,47 +88,170 @@ func main() {
 	flag.Parse()
 
 	numWorkers := runtime.NumCPU() * *multiplier
-	runTCPServer(numWorkers, *port)
+
+	fmt.Println("00000000")
+	s := newServer(numWorkers)
+	fmt.Println("111111")
+	s.start(*port)
+	fmt.Println("222222")
+
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
+	fmt.Println("33333333")
+	<-signalCh
+	fmt.Println("44444444")
+	s.stop()
+	//runTCPServer(numWorkers, *port)
 	fmt.Println("Server stopped after processing total requests:", counter)
 }
 
-func runTCPServer(maxConn int, port string) {
+type server struct {
+	maxConn           int
+	activeConnections map[net.Conn]bool
+	quit              chan struct{}
+	addConn           chan net.Conn
+	removeConn        chan net.Conn
+	jobs              chan net.Conn
+	listener          net.Listener
+	wg                sync.WaitGroup
+	closeOnce         sync.Once
+}
+
+func newServer(maxConn int) *server {
+	return &server{
+		maxConn:           maxConn,
+		activeConnections: make(map[net.Conn]bool),
+		quit:              make(chan struct{}),
+		addConn:           make(chan net.Conn, maxConn),
+		removeConn:        make(chan net.Conn, maxConn),
+		jobs:              make(chan net.Conn),
+		wg:                sync.WaitGroup{},
+	}
+}
+
+func (s *server) start(port string) {
+	s.mantainsConnPool()
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
 		panic(err)
 	}
-	defer listener.Close()
-	fmt.Println("Server is listening on port: ", Port)
+	s.listener = listener
+	fmt.Println("Server is listening on port: ", port)
 
-	// Worker pool
-	jobs := make(chan net.Conn, maxConn)
-	var wg sync.WaitGroup
-
-	fmt.Println("Starting with ", maxConn, "workers")
-	for i := 0; i < maxConn; i++ {
-		wg.Add(1)
-		go worker(jobs, &wg)
+	fmt.Println("Starting with ", s.maxConn, "workers")
+	for i := 0; i < s.maxConn; i++ {
+		s.wg.Add(1)
+		go s.startWorker()
 	}
 
-	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
-
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		for {
 			conn, er := listener.Accept()
 			if er != nil {
-				fmt.Println("Connection error:", er)
-				continue
+				select {
+				case <-s.quit:
+					fmt.Println("Close the listener")
+					return
+				default:
+					fmt.Println("Connection error:", er)
+					continue
+				}
 			}
 			// Send the connection to the worker pool
-			jobs <- conn
+			select {
+			case s.jobs <- conn:
+			case <-s.quit:
+				conn.Close()
+				return
+			}
 		}
 	}()
-
-	<-signalCh
-	close(jobs)
-	wg.Wait()
 }
+
+func (s *server) stop() {
+	s.closeOnce.Do(func() {
+		fmt.Println("Stopping server...")
+
+		// Stop listener
+		close(s.quit)
+		s.listener.Close()
+
+		// Close job queue and wait for workers
+		close(s.jobs)
+		s.wg.Wait()
+		fmt.Println("Server fully stopped.")
+	})
+}
+
+func (s *server) mantainsConnPool() {
+	go func() {
+		for {
+			select {
+			case <-s.quit:
+				for conn, _ := range s.activeConnections {
+					conn.Close()
+				}
+				fmt.Println("All active connections are closed.")
+				return
+			case conn := <-s.addConn:
+				fmt.Println("add new connection to the pool")
+				s.activeConnections[conn] = true
+			case conn := <-s.removeConn:
+				fmt.Println("remove connection from the pool")
+				delete(s.activeConnections, conn)
+			}
+		}
+	}()
+}
+
+//func runTCPServer(maxConn int, port string) {
+//	listener, err := net.Listen("tcp", port)
+//	if err != nil {
+//		panic(err)
+//	}
+//	defer listener.Close()
+//	fmt.Println("Server is listening on port: ", port)
+//
+//	quit := make(chan struct{})
+//	// Worker pool
+//	jobs := make(chan net.Conn, maxConn)
+//	var wg sync.WaitGroup
+//
+//	fmt.Println("Starting with ", maxConn, "workers")
+//	for i := 0; i < maxConn; i++ {
+//		wg.Add(1)
+//		go worker(jobs, &wg)
+//	}
+//
+//	signalCh := make(chan os.Signal, 1)
+//	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
+//
+//	go func() {
+//		for {
+//			conn, er := listener.Accept()
+//			if er != nil {
+//				select {
+//				case <-quit:
+//					fmt.Println("Close the listener")
+//					return
+//				default:
+//					fmt.Println("Connection error:", er)
+//					continue
+//				}
+//			}
+//			// Send the connection to the worker pool
+//			jobs <- conn
+//		}
+//	}()
+//
+//	<-signalCh
+//	close(quit)
+//	listener.Close()
+//	close(jobs)
+//	wg.Wait()
+//}
 
 // Server 24 workers and client with 24 workers
 // 1 execution: 14 210 940
