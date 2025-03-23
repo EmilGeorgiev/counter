@@ -92,7 +92,7 @@ Each client request sends a uint64 value and receives the updated counter
 ```
 Result:
 ```text
-Server stopped after processing total requests: 16,423,170    
+Server stopped after processing total requests: 16,436,737    
 ```
 
 

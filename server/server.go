@@ -124,44 +124,49 @@ func newServer(maxConn int) *server {
 }
 
 func (s *server) start(port string) {
+	if s.listener != nil {
+		panic("server already started")
+	}
 	s.trackActiveConnections()
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
 		panic(err)
 	}
 	s.listener = listener
-	fmt.Println("Server is listening on port: ", port)
 
-	fmt.Println("Starting with ", s.maxConn, "workers")
 	for i := 0; i < s.maxConn; i++ {
 		s.wg.Add(1)
 		go s.startWorker()
 	}
 
+	fmt.Printf("Server Listening on port %s with %d workers\n", port, s.maxConn)
+
 	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		for {
-			conn, er := listener.Accept()
-			if er != nil {
-				select {
-				case <-s.quit:
-					fmt.Println("Close the listener")
-					return
-				default:
-					fmt.Println("Connection error:", er)
-					continue
-				}
-			}
-			// Send the connection to the worker pool
+	go s.accept()
+}
+
+func (s *server) accept() {
+	defer s.wg.Done()
+	for {
+		conn, er := s.listener.Accept()
+		if er != nil {
 			select {
-			case s.jobs <- conn:
 			case <-s.quit:
-				conn.Close()
+				fmt.Println("Close the listener")
 				return
+			default:
+				fmt.Println("Connection error:", er)
+				continue
 			}
 		}
-	}()
+		// Send the connection to the worker pool
+		select {
+		case s.jobs <- conn:
+		case <-s.quit:
+			conn.Close()
+			return
+		}
+	}
 }
 
 func (s *server) stop() {
