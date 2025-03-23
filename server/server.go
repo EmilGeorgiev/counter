@@ -160,9 +160,6 @@ func (s *server) handleConnection(conn net.Conn) {
 		buf := make([]byte, 16)
 		_, err := reader.Read(buf)
 		if err != nil {
-			if err != io.EOF {
-				fmt.Printf("[read error from %s]: %v\n", conn.RemoteAddr(), err)
-			}
 			return
 		}
 
