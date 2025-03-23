@@ -45,4 +45,31 @@ Uses buffered readers and atomic operations to reduce context switches and mutex
 Graceful shutdown via OS signal capture.
 Handles EOF, read/write errors, and closes client connections cleanly.
 
+## CLI flags
+The server and client both accept CLI flags to optimize runtime behavior, such as the number of workers (--multiplier). 
+This allows flexible scaling depending on the environment. When the server is running alone on a machine 
+(i.e., the client is on a separate machine), the server has access to more CPU and memory resources, resulting in a 
+higher number of processed requests per second. In contrast, if the server and client run on the same machine, they 
+compete for CPU resources, and performance may be impacted. In this case, tuning the --multiplier flag becomes essential 
+to balance server-side concurrency with system load. These flags make the system adaptable for different test setups: 
+isolated server benchmarking, local client/server stress tests, or real-world deployments.
 
+## Start the client and the server
+Start the server:
+```text
+go run server/server.go
+```
+optionally you can provide flags --multiplier (Multiplier for number of workers per CPU) and --port ( specify on which port to listen)
+
+Start the client:
+```text
+go run client/client.go
+```
+optionally you can provide flags --multiplier (Multiplier for number of workers per CPU) and --serverAddress ( the address of the server)
+The client will start multiple workers that will connect to the server and send as request integer 1. 
+Wait for the client to finish. Then stop the server:
+```text
+Control + C
+```
+and you will in the terminal the counter value. The number of the counter is equal to the number of requests that are processed
+ny thr server because every request contains 1 as a payload
