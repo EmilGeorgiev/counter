@@ -75,7 +75,7 @@ func handleConnection(conn net.Conn) {
 }
 
 func main() {
-	numWorkers := runtime.NumCPU() * 50
+	numWorkers := runtime.NumCPU() * 20
 
 	runTCPServer(numWorkers, Port)
 	fmt.Println("Server stopped after processing total requests:", counter)
